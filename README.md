@@ -1,6 +1,6 @@
 # 💧 HumidiCup H1 BLE
 
-<img src="docs/logo.svg" alt="HumidiCup H1 BLE logo" width="128" align="right">
+<img src="docs/icon.png" alt="HumidiCup" width="128" align="right">
 
 **Unofficial Bluetooth LE Home Assistant integration for the HumidiCup H1 hygrometer**
 
