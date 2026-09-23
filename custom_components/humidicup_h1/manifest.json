@@ -3,6 +3,11 @@
   "name": "HumidiCup H1 BLE (Unofficial)",
   "bluetooth": [
     {
+      "local_name": "H1*",
+      "manufacturer_id": 1,
+      "connectable": true
+    },
+    {
       "service_uuid": "0000aa00-0000-1000-8000-00805f9b34fb",
       "connectable": true
     }

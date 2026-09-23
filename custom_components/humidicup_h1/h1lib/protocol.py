@@ -11,10 +11,11 @@ import time
 from dataclasses import dataclass
 
 SERVICE_UUID = "0000aa00-0000-1000-8000-00805f9b34fb"
-WRITE_CHAR_UUID = "0000aa01-0000-1000-8000-00805f9b34fb"
-NOTIFY_CHAR_UUID = "0000aa02-0000-1000-8000-00805f9b34fb"
+WRITE_CHAR_UUID = "0000aa02-0000-1000-8000-00805f9b34fb"
+NOTIFY_CHAR_UUID = "0000aa01-0000-1000-8000-00805f9b34fb"
 
 DEVICE_MODEL_TYPE = 0x01
+MANUFACTURER_ID = 0x0001
 
 OP_TIME_SYNC = 0x01
 OP_READ_HISTORY = 0x03
@@ -124,8 +125,8 @@ def build_set_buzzer(enabled: bool) -> bytes:
 
 def build_set_interval(minutes: int) -> bytes:
     """Command 0x09: set the logging interval in minutes."""
-    if not 1 <= minutes <= 255:
-        raise ValueError("Interval must be within 1..255 minutes")
+    if not 10 <= minutes <= 60:
+        raise ValueError("Interval must be within 10..60 minutes (firmware-enforced)")
     return bytes([OP_SET_INTERVAL, minutes])
 
 

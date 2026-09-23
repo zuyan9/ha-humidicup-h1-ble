@@ -27,18 +27,17 @@ from .const import (
     DOMAIN,
 )
 from .h1lib.device import H1Device
-from .h1lib.protocol import DEVICE_MODEL_TYPE, SERVICE_UUID
+from .h1lib.protocol import DEVICE_MODEL_TYPE, MANUFACTURER_ID
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _is_h1_advertisement(service_info: BluetoothServiceInfoBleak) -> bool:
-    if SERVICE_UUID not in service_info.advertisement.service_uuids:
+    data = service_info.advertisement.manufacturer_data.get(MANUFACTURER_ID)
+    if data is None or len(data) < 15 or data[6] != DEVICE_MODEL_TYPE:
         return False
-    return any(
-        len(data) >= 15 and data[6] == DEVICE_MODEL_TYPE
-        for data in service_info.advertisement.manufacturer_data.values()
-    )
+    mac = bytes.fromhex(service_info.address.replace(":", ""))
+    return bytes(data[0:6]) == mac[::-1]
 
 
 class H1ConfigFlow(ConfigFlow, domain=DOMAIN):
