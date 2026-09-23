@@ -129,7 +129,8 @@ class H1ConfigFlow(ConfigFlow, domain=DOMAIN):
             local_name=discovery_info.advertisement.local_name,
         )
         try:
-            await device.connect(timeout=DEFAULT_CONNECTION_TIMEOUT)
+            async with device.connection(timeout=DEFAULT_CONNECTION_TIMEOUT):
+                await device.read_config()
         except Exception:
             _LOGGER.debug(
                 "Validation connection to %s failed",
@@ -137,8 +138,6 @@ class H1ConfigFlow(ConfigFlow, domain=DOMAIN):
                 exc_info=True,
             )
             return {"base": "cannot_connect"}
-        finally:
-            await device.disconnect()
         return {}
 
     @callback

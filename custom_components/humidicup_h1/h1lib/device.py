@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+import time
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from bleak import BleakClient
@@ -33,20 +35,57 @@ class H1State:
     config: DeviceConfig | None = None
 
 
+class AsyncRLock:
+    """Reentrant asyncio lock bound to the current asyncio.Task."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._owner: asyncio.Task | None = None
+        self._depth = 0
+
+    async def acquire(self) -> None:
+        current_task = asyncio.current_task()
+        if self._owner is not None and self._owner == current_task:
+            self._depth += 1
+            return
+        await self._lock.acquire()
+        self._owner = current_task
+        self._depth = 1
+
+    def release(self) -> None:
+        current_task = asyncio.current_task()
+        if self._owner != current_task:
+            raise RuntimeError("Cannot release un-acquired lock")
+        self._depth -= 1
+        if self._depth == 0:
+            self._owner = None
+            self._lock.release()
+
+    async def __aenter__(self) -> None:
+        await self.acquire()
+
+    async def __aexit__(
+        self, exc_type: object, exc_val: object, exc_tb: object
+    ) -> None:
+        self.release()
+
+
 class H1Device:
-    """Persistent-connection HumidiCup H1 device."""
+    """HumidiCup H1 device supporting passive telemetry and on-demand control."""
 
     def __init__(self, ble_device: BLEDevice, local_name: str | None = None) -> None:
         """Initialize the device wrapper."""
         self.ble_device = ble_device
         self.name = local_name or ble_device.name or "HumidiCup H1"
         self.state = H1State()
+        self.last_seen: float | None = None
         self._client: BleakClient | None = None
         self._expected_disconnect = False
         self._pending: dict[int, asyncio.Future[bytes]] = {}
         self._listeners: list[Callable[[], None]] = []
         self._disconnect_callbacks: list[Callable[[], None]] = []
         self._command_lock = asyncio.Lock()
+        self._connect_lock = AsyncRLock()
 
     @property
     def address(self) -> str:
@@ -59,7 +98,7 @@ class H1Device:
         return self._client is not None and self._client.is_connected
 
     def update_ble_device(self, ble_device: BLEDevice) -> None:
-        """Update the BLEDevice reference (e.g. after adapter switch)."""
+        """Update the BLEDevice reference (e.g. after adapter switch or new adv)."""
         self.ble_device = ble_device
 
     def feed_advertisement(self, data: bytes) -> None:
@@ -71,6 +110,7 @@ class H1Device:
             return
         if adv.model_type != protocol.DEVICE_MODEL_TYPE:
             return
+        self.last_seen = time.time()
         self.state.temperature = adv.temperature
         self.state.humidity = adv.humidity
         self.state.battery = adv.battery
@@ -78,8 +118,23 @@ class H1Device:
         self.state.buzzer_enabled = adv.buzzer_enabled
         self._notify_listeners()
 
+    @asynccontextmanager
+    async def connection(self, timeout: float = DEFAULT_TIMEOUT) -> AsyncIterator[None]:
+        """Context manager to ensure GATT connection during control operations."""
+        async with self._connect_lock:
+            was_connected = self.connected
+            if not was_connected:
+                await self.connect(timeout=timeout)
+            try:
+                yield
+            finally:
+                if not was_connected:
+                    await self.disconnect()
+
     async def connect(self, timeout: float = DEFAULT_TIMEOUT) -> None:
-        """Connect, subscribe to notifications and prime the device state."""
+        """Connect and subscribe to notifications."""
+        if self.connected:
+            return
         self._expected_disconnect = False
         last_exc: Exception | None = None
         for attempt in range(1, MAX_CONNECT_ATTEMPTS + 1):
@@ -113,13 +168,6 @@ class H1Device:
                 f"{MAX_CONNECT_ATTEMPTS} attempts: {last_exc}"
             )
 
-        try:
-            await self.sync_time()
-            await self.read_config()
-        except Exception:
-            await self.disconnect()
-            raise
-
     async def disconnect(self) -> None:
         """Disconnect from the device."""
         self._expected_disconnect = True
@@ -138,13 +186,15 @@ class H1Device:
 
     async def sync_time(self) -> None:
         """Command 0x01: synchronize the device RTC with the host clock."""
-        await self._execute(protocol.OP_TIME_SYNC, protocol.build_time_sync())
+        async with self.connection():
+            await self._execute(protocol.OP_TIME_SYNC, protocol.build_time_sync())
 
     async def read_config(self) -> DeviceConfig:
         """Command 0x0E01: read and store the full device configuration."""
-        response = await self._execute(
-            protocol.OP_READ_CONFIG, protocol.build_read_config()
-        )
+        async with self.connection():
+            response = await self._execute(
+                protocol.OP_READ_CONFIG, protocol.build_read_config()
+            )
         config = protocol.decode_config(response)
         self.state.config = config
         self.state.buzzer_enabled = config.buzzer_enabled
@@ -153,14 +203,18 @@ class H1Device:
 
     async def set_unit(self, celsius: bool) -> None:
         """Command 0x04: set the display unit."""
-        await self._execute(protocol.OP_SET_UNIT, protocol.build_set_unit(celsius))
+        async with self.connection():
+            await self._execute(protocol.OP_SET_UNIT, protocol.build_set_unit(celsius))
         if self.state.config is not None:
             self.state.config.temp_unit_celsius = celsius
         self._notify_listeners()
 
     async def set_buzzer(self, enabled: bool) -> None:
         """Command 0x07: toggle the buzzer."""
-        await self._execute(protocol.OP_SET_BUZZER, protocol.build_set_buzzer(enabled))
+        async with self.connection():
+            await self._execute(
+                protocol.OP_SET_BUZZER, protocol.build_set_buzzer(enabled)
+            )
         self.state.buzzer_enabled = enabled
         if self.state.config is not None:
             self.state.config.buzzer_enabled = enabled
@@ -168,9 +222,10 @@ class H1Device:
 
     async def set_interval(self, minutes: int) -> None:
         """Command 0x09: set the logging interval in minutes."""
-        await self._execute(
-            protocol.OP_SET_INTERVAL, protocol.build_set_interval(minutes)
-        )
+        async with self.connection():
+            await self._execute(
+                protocol.OP_SET_INTERVAL, protocol.build_set_interval(minutes)
+            )
         if self.state.config is not None:
             self.state.config.log_interval = minutes
         self._notify_listeners()
@@ -183,10 +238,11 @@ class H1Device:
         high_humid: float,
     ) -> None:
         """Command 0x06: set the alarm thresholds."""
-        await self._execute(
-            protocol.OP_SET_ALARMS,
-            protocol.build_set_alarms(low_temp, high_temp, low_humid, high_humid),
-        )
+        async with self.connection():
+            await self._execute(
+                protocol.OP_SET_ALARMS,
+                protocol.build_set_alarms(low_temp, high_temp, low_humid, high_humid),
+            )
         if self.state.config is not None:
             self.state.config.low_temp_alarm = low_temp
             self.state.config.high_temp_alarm = high_temp
@@ -196,10 +252,11 @@ class H1Device:
 
     async def set_calibration(self, temp_offset: float, humid_offset: float) -> None:
         """Command 0x0A: set manual calibration offsets."""
-        await self._execute(
-            protocol.OP_SET_CALIBRATION,
-            protocol.build_set_calibration(temp_offset, humid_offset),
-        )
+        async with self.connection():
+            await self._execute(
+                protocol.OP_SET_CALIBRATION,
+                protocol.build_set_calibration(temp_offset, humid_offset),
+            )
         if self.state.config is not None:
             self.state.config.temp_calibration = temp_offset
             self.state.config.humid_calibration = humid_offset
@@ -207,7 +264,10 @@ class H1Device:
 
     async def factory_reset(self) -> None:
         """Command 0x05: factory reset the device."""
-        await self._execute(protocol.OP_FACTORY_RESET, protocol.build_factory_reset())
+        async with self.connection():
+            await self._execute(
+                protocol.OP_FACTORY_RESET, protocol.build_factory_reset()
+            )
 
     async def _execute(
         self, opcode: int, payload: bytes, timeout: float = 10.0
@@ -228,7 +288,7 @@ class H1Device:
                 self._pending.pop(protocol.response_opcode(opcode), None)
 
     def _notification_handler(self, _: int, data: bytearray) -> None:
-        """Dispatch an AA02 notification to the pending command or config parser."""
+        """Dispatch an AA01 notification to the pending command or config parser."""
         if not data:
             return
         opcode = data[0]

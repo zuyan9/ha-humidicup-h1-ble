@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from datetime import timedelta
 from functools import partial
 
 from bleak.exc import BleakError
@@ -20,13 +19,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
-from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     CONF_CONNECTION_TIMEOUT,
-    CONF_UPDATE_PERIOD,
     DEFAULT_CONNECTION_TIMEOUT,
-    DEFAULT_UPDATE_PERIOD,
     DOMAIN,
 )
 from .h1lib.device import H1Device
@@ -39,7 +35,7 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
 ]
 
-type H1ConfigEntry = ConfigEntry[H1Device]
+H1ConfigEntry = ConfigEntry[H1Device]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,37 +59,58 @@ async def async_setup_entry(hass: HomeAssistant, entry: H1ConfigEntry) -> bool:
 
     merged_options = entry.data | entry.options
     timeout = merged_options.get(CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT)
-    update_period = merged_options.get(CONF_UPDATE_PERIOD, DEFAULT_UPDATE_PERIOD)
 
     device: H1Device | None = getattr(entry, "runtime_data", None)
     discovery_info = bluetooth.async_last_service_info(hass, address, connectable=True)
 
     if device is None:
+        if discovery_info is not None:
+            ble_dev = discovery_info.device
+        else:
+            ble_dev = bluetooth.async_ble_device_from_address(
+                hass, address, connectable=True
+            )
+        if ble_dev is None:
+            _register_reappear_callback(hass, entry, address)
+            raise ConfigEntryNotReady(translation_key="device_not_present")
+
         device = H1Device(
-            discovery_info.device,
+            ble_dev,
             local_name=entry.data.get("local_name"),
         )
         entry.runtime_data = device
     elif discovery_info is not None:
         device.update_ble_device(discovery_info.device)
 
-    try:
-        async with asyncio.timeout(timeout * 3):
-            await device.connect(timeout=timeout)
-    except (ConnectionError, BleakError, TimeoutError) as err:
-        await device.disconnect()
-        raise ConfigEntryNotReady(
-            translation_key="could_not_connect",
-            translation_placeholders={"error": str(err)},
-        ) from err
-    except Exception as err:
-        await device.disconnect()
-        _LOGGER.exception("Unknown error connecting to %s", address)
-        raise ConfigEntryNotReady(
-            translation_key="unknown_error",
-            translation_placeholders={"error": str(err)},
-        ) from err
+    # Prime device state from latest advertisement if available
+    if discovery_info is not None:
+        for (
+            manufacturer_data
+        ) in discovery_info.advertisement.manufacturer_data.values():
+            if len(manufacturer_data) >= 15 and manufacturer_data[6] == 0x01:
+                device.feed_advertisement(manufacturer_data)
+                break
 
+    # Read initial configuration and sync time via a brief on-demand connection
+    try:
+        async with asyncio.timeout(timeout * 2):
+            async with device.connection(timeout=timeout):
+                await device.sync_time()
+                await device.read_config()
+    except (ConnectionError, BleakError, TimeoutError) as err:
+        _LOGGER.warning(
+            "Initial GATT handshake failed for %s (%s); continuing in passive mode",
+            address,
+            err,
+        )
+    except Exception as err:
+        _LOGGER.warning(
+            "Unexpected error during initial GATT handshake with %s: %s",
+            address,
+            err,
+        )
+
+    # Register passive advertisement listener for continuous telemetry updates
     entry.async_on_unload(
         bluetooth.async_register_callback(
             hass,
@@ -103,36 +120,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: H1ConfigEntry) -> bool:
         )
     )
 
-    @callback
-    def _periodic_config_refresh(now) -> None:
-        if device.connected:
-            hass.async_create_task(_safe_read_config(device))
-
-    entry.async_on_unload(
-        async_track_time_interval(
-            hass, _periodic_config_refresh, timedelta(minutes=update_period)
-        )
-    )
-
-    @callback
-    def _on_unexpected_disconnect() -> None:
-        _LOGGER.info("Device %s disconnected unexpectedly, reloading entry", address)
-        hass.config_entries.async_schedule_reload(entry.entry_id)
-
-    entry.async_on_unload(
-        device.register_disconnect_callback(_on_unexpected_disconnect)
-    )
-
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_update_listener))
     return True
-
-
-async def _safe_read_config(device: H1Device) -> None:
-    try:
-        await device.read_config()
-    except Exception:
-        _LOGGER.debug("Periodic config read failed for %s", device.address)
 
 
 async def _update_listener(hass: HomeAssistant, entry: H1ConfigEntry) -> None:
@@ -158,6 +148,7 @@ def _advertisement_callback(
     def _on_advertisement(
         service_info: BluetoothServiceInfoBleak, change: BluetoothChange
     ) -> None:
+        device.update_ble_device(service_info.device)
         for manufacturer_data in service_info.advertisement.manufacturer_data.values():
             if len(manufacturer_data) >= 15 and manufacturer_data[6] == 0x01:
                 device.feed_advertisement(manufacturer_data)

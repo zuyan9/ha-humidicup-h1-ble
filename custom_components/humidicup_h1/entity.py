@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from homeassistant.components import bluetooth
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
@@ -29,13 +30,16 @@ class H1Entity(Entity):
 
     @property
     def available(self) -> bool:
-        """Entities are unavailable while the device is disconnected."""
-        return self._device.connected
+        """Return True if the device is visible over Bluetooth."""
+        if self.hass is None:
+            return False
+        return bluetooth.async_address_present(self.hass, self._device.address)
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to device state changes."""
         self.async_on_remove(self._device.register_listener(self._handle_state_change))
 
     def _handle_state_change(self) -> None:
-        self._attr_device_info["sw_version"] = self._device.state.firmware_version
+        if self._device.state.firmware_version is not None:
+            self._attr_device_info["sw_version"] = self._device.state.firmware_version
         self.async_write_ha_state()

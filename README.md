@@ -28,12 +28,9 @@ Battery | | | Low / high humidity alarm |
 | | | | Temperature / humidity calibration offset |
 
 Live telemetry (temperature, humidity, battery, firmware version, buzzer state) is
-also read from the device's passive BLE broadcasts.
-
-> **⚠️ Bluetooth LE Limitation:** This integration keeps a persistent connection
-> to the device for reliable control. While connected, the vendor mobile app cannot
-> connect to the device. Disable the integration (or the config entry) if you need
-> to use the app.
+continuously received from the device's passive BLE broadcasts. The integration connects
+on-demand only when applying configuration changes (buzzer, alarms, calibration, clock sync),
+leaving the device free to broadcast to Home Assistant and ESPHome Bluetooth proxies.
 
 ## Installation
 
