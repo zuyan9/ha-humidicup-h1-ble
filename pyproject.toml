@@ -1,0 +1,33 @@
+[project]
+name = "ha-humidicup-h1-ble"
+version = "0.1.0"
+description = "Unofficial HumidiCup H1 BLE Home Assistant integration"
+readme = "README.md"
+license = { text = "0BSD" }
+requires-python = ">=3.12"
+dependencies = [
+    "bleak",
+    "bleak-retry-connector",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components"]

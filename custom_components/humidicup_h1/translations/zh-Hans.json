@@ -1,0 +1,80 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "选择 HumidiCup H1 设备",
+        "data": {
+          "address": "设备"
+        }
+      },
+      "bluetooth_confirm": {
+        "description": "要设置 {name} 吗？\n\n本集成会与设备保持持久的蓝牙连接，期间厂商手机 App 的连接会暂时断开。"
+      }
+    },
+    "abort": {
+      "no_devices_found": "未通过蓝牙找到受支持的 HumidiCup H1 设备",
+      "not_supported": "该设备不是受支持的 HumidiCup H1",
+      "cannot_connect": "无法连接到设备",
+      "already_configured": "设备已配置"
+    },
+    "error": {
+      "cannot_connect": "无法连接到设备"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "update_period": "配置刷新间隔（分钟）",
+          "connection_timeout": "连接超时（秒）"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "missing_address": {
+      "message": "配置项缺少设备地址"
+    },
+    "device_not_present": {
+      "message": "设备当前无法通过蓝牙访问"
+    },
+    "could_not_connect": {
+      "message": "无法连接到设备：{error}"
+    },
+    "unknown_error": {
+      "message": "未知错误：{error}"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temperature": { "name": "温度" },
+      "humidity": { "name": "湿度" },
+      "battery": { "name": "电量" }
+    },
+    "switch": {
+      "buzzer": { "name": "蜂鸣器" }
+    },
+    "select": {
+      "temperature_unit": {
+        "name": "显示单位",
+        "state": {
+          "celsius": "摄氏度 (°C)",
+          "fahrenheit": "华氏度 (°F)"
+        }
+      }
+    },
+    "number": {
+      "log_interval": { "name": "记录间隔" },
+      "low_temp_alarm": { "name": "低温报警" },
+      "high_temp_alarm": { "name": "高温报警" },
+      "low_humid_alarm": { "name": "低湿报警" },
+      "high_humid_alarm": { "name": "高湿报警" },
+      "temp_calibration": { "name": "温度校准偏移" },
+      "humid_calibration": { "name": "湿度校准偏移" }
+    },
+    "button": {
+      "sync_time": { "name": "同步时钟" },
+      "factory_reset": { "name": "恢复出厂设置" }
+    }
+  }
+}

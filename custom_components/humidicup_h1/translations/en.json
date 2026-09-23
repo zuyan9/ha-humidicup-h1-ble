@@ -1,0 +1,80 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select HumidiCup H1 device",
+        "data": {
+          "address": "Device"
+        }
+      },
+      "bluetooth_confirm": {
+        "description": "Do you want to set up {name}?\n\nThe integration will keep a persistent Bluetooth connection to the device, which temporarily disconnects the vendor mobile app."
+      }
+    },
+    "abort": {
+      "no_devices_found": "No supported HumidiCup H1 devices found via Bluetooth",
+      "not_supported": "This device is not a supported HumidiCup H1",
+      "cannot_connect": "Failed to connect to the device",
+      "already_configured": "Device is already configured"
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the device"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "update_period": "Configuration refresh interval (minutes)",
+          "connection_timeout": "Connection timeout (seconds)"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "missing_address": {
+      "message": "Config entry is missing the device address"
+    },
+    "device_not_present": {
+      "message": "The device is not currently reachable via Bluetooth"
+    },
+    "could_not_connect": {
+      "message": "Could not connect to the device: {error}"
+    },
+    "unknown_error": {
+      "message": "Unexpected error: {error}"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temperature": { "name": "Temperature" },
+      "humidity": { "name": "Humidity" },
+      "battery": { "name": "Battery" }
+    },
+    "switch": {
+      "buzzer": { "name": "Buzzer" }
+    },
+    "select": {
+      "temperature_unit": {
+        "name": "Display unit",
+        "state": {
+          "celsius": "Celsius (°C)",
+          "fahrenheit": "Fahrenheit (°F)"
+        }
+      }
+    },
+    "number": {
+      "log_interval": { "name": "Logging interval" },
+      "low_temp_alarm": { "name": "Low temperature alarm" },
+      "high_temp_alarm": { "name": "High temperature alarm" },
+      "low_humid_alarm": { "name": "Low humidity alarm" },
+      "high_humid_alarm": { "name": "High humidity alarm" },
+      "temp_calibration": { "name": "Temperature calibration offset" },
+      "humid_calibration": { "name": "Humidity calibration offset" }
+    },
+    "button": {
+      "sync_time": { "name": "Synchronize clock" },
+      "factory_reset": { "name": "Factory reset" }
+    }
+  }
+}

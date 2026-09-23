@@ -1,0 +1,23 @@
+{
+  "entity": {
+    "switch": {
+      "buzzer": { "default": "mdi:bell-ring" }
+    },
+    "select": {
+      "temperature_unit": { "default": "mdi:temperature-celsius" }
+    },
+    "number": {
+      "log_interval": { "default": "mdi:timer-cog" },
+      "low_temp_alarm": { "default": "mdi:thermometer-low" },
+      "high_temp_alarm": { "default": "mdi:thermometer-high" },
+      "low_humid_alarm": { "default": "mdi:water-percent-alert" },
+      "high_humid_alarm": { "default": "mdi:water-percent-alert" },
+      "temp_calibration": { "default": "mdi:thermometer-check" },
+      "humid_calibration": { "default": "mdi:water-sync" }
+    },
+    "button": {
+      "sync_time": { "default": "mdi:clock-sync" },
+      "factory_reset": { "default": "mdi:restore-alert" }
+    }
+  }
+}
